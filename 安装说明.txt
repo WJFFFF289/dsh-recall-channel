@@ -1,4 +1,4 @@
-﻿dsh-recall-channel 0.1.0 —— 安装与验收说明
+﻿dsh-recall-channel v1.0 —— 安装与验收说明
 ================================================
 
 【这是什么】
@@ -34,6 +34,21 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
      install.cmd -DshRoot "D:\某处\DeepSeek-Harness-便携版-0.1.2-alpha.1\DeepSeek Harness"
 
 4. 重启一次 DeepSeek Harness（插件在启动时装载）。
+   重启后看启动日志，应出现这一行：
+     [recall-channel] v1.0 ready - 2 tool(s): search_history, recall_history + post-compaction notice
+   这行里的版本号就是「当前跑的是哪个版本」的凭据，回滚后请用它核对。
+
+
+【版本与回滚】
+本包是 v1.0。如果需要换回其它版本（或将来从新版本退回 v1.0）：
+  1) 把目标版本的压缩包解压到**另一个**目录（不要覆盖当前目录）；
+  2) 双击那个目录里的 install.cmd —— 安装器是幂等的：它会先卸载已装的
+     dsh-recall-channel，再装本目录的这一份；
+  3) 重启 DeepSeek Harness；
+  4) 看启动日志里的版本号确认切换成功。
+插件不写任何自有数据，所以换版本不需要数据迁移，历史会话完全不受影响。
+如果曾经在 profile 的 cordis.patch.yml 里写过某个版本专有的配置键，回退到
+旧版本前请先把那些键删掉。
 
 
 【验收（约 5 分钟）】
@@ -81,7 +96,7 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 
 【文件清单】
   install.cmd / install.ps1   一键安装器
-  dist\index.js               插件本体（自包含，运行时零外部 import）
+  dist\index.js               插件本体（自包含：零运行时 import、零第三方依赖，也不读写任何自有文件）
   lib\*.js                    源码
   cordis.patch.yml            profile 层补丁（声明插件行）
   package.json                包元数据（含 dsh.bundle 声明）
@@ -90,7 +105,7 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
   LICENSE                     MIT
 
 
-【两个已知情况】
+【三个已知情况】
 1. 不要用 npx @deepseek-ai/dsh 去装一个全新的 DSH：npm 上 dsh 是 0.1.6-alpha.1，
    而 dsh-app-boot 已经发到 0.1.6-alpha.2，两者不兼容，启动会直接崩
    （SyntaxError: ... does not provide an export named 'watchUserPatches'）。
@@ -98,3 +113,9 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 
 2. 本插件构建时把依赖内联进 dist/index.js，所以目标机器**不需要**联网，
    也不需要 node_modules。安装脚本只用该 DSH 自带的 node。
+
+3. 插件读取会话历史用的是 DSH 的 session.snapshotEvents() / eventAt() 两个
+   同步接口。这两个接口在 DSH 源码里已被标注 @deprecated（"新代码禁止调用"），
+   但 DSH 0.1.6-alpha.1 的核心代码本身仍在大量使用它们，因此当前完全正常。
+   将来若 DSH 移除这两个接口，插件会失效而不会损坏数据；届时需要更新插件。
+   本版本实测环境：@deepseek-ai/dsh 0.1.6-alpha.1。
