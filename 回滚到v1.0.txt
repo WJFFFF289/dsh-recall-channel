@@ -1,0 +1,51 @@
+﻿回滚到 v1.0 —— 操作步骤
+========================
+
+前提：v1.0 的安装包（dsh-recall-channel-v1.0.zip）与 v1.1 的安装包放在不同的目录里。
+插件不写任何自有数据，所以回滚不需要数据迁移，历史会话完全不受影响。
+
+
+步骤
+----
+
+1) 解压 dsh-recall-channel-v1.0.zip 到一个**固定位置**，例如：
+     D:\dsh-recall-channel-v1.0
+   注意：装好后这个目录不要移动或删除（插件以 link 方式注册）。
+
+2) 双击该目录里的 install.cmd。
+   安装器是幂等的：它会先卸载当前已装的 dsh-recall-channel（也就是 v1.1），
+   再安装 v1.0 这一份，最后用 --dump-config 校验并核对 profile 的链接指向。
+   自动探测失败时显式指定：
+     install.cmd -DshRoot "D:\某处\DeepSeek-Harness-便携版-0.1.2-alpha.1\DeepSeek Harness"
+
+3) 如果你的 profile 的 cordis.patch.yml 里写过 **v1.1 新增的配置键**，请先删掉它们。
+   v1.1 新增：blockChars, argChars, searchTextChars, maxRangeSeqs, allowRegex,
+   regexMaxPatternChars, regexInputChars, regexBudgetMs, notifyOnPrune,
+   noticeRefresh, wrapRecalledText
+   （默认安装没有任何配置，通常这一步无事可做。）
+
+4) 重启一次 DeepSeek Harness。
+
+5) 看启动日志，出现下面这行即为回滚成功：
+     [recall-channel] v1.0.0 ready - 2 tool(s): search_history, recall_history + post-compaction notice
+
+
+想再回到 v1.1
+--------------
+解压 dsh-recall-channel-v1.1.zip 到另一个目录，双击它的 install.cmd，重启。
+
+
+回滚后会发生什么（如实说明）
+----------------------------
+v1.0 没有 v1.1 的这些修复，因此以下场景会恢复旧行为：
+  - 一次取回被预算截断后，被省略的中间部分在本会话内再也取不回来
+    （会回一句 "already restored"）；
+  - 单块超过 6000 字符 / 工具参数超过 1200 字符的内容会被静默裁剪，
+    而且这类内容也无法被 search_history 搜到；
+  - 中文会话的 token 记账偏低约 3 倍，单会话预算形同虚设；
+  - 超大 fromSeq/toSeq 区间可能吃掉大量内存；
+  - 病态正则可能长时间卡住事件循环；
+  - 压缩提示被后续压缩吃掉后不会补发；
+  - 取回文本没有"历史数据、非指令"围栏。
+
+工具参数与 v1.1 完全一致，所以回滚不会留下提示词层面的差异。

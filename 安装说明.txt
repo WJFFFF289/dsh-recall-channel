@@ -1,26 +1,28 @@
-﻿dsh-recall-channel v1.0 —— 安装与验收说明
-================================================
+﻿dsh-recall-channel v1.1 —— 安装与验收说明（v1.0 的回滚通道见文末）
+=================================================================
 
 【这是什么】
 DeepSeek Harness 的「回忆通道」插件。会话被压缩（compaction）之后，原文仍然在
-append-only 的会话日志里，这个插件让模型能自己把被压掉的细节检索出来、逐字取回。
+append-only 的会话日志里，这个插件让模型能自己把被压掉的细节检索出来、取回原文。
 
 它提供两个工具：
-  search_history  在整份日志（含被压缩掉的内容）里检索，返回带 seq 坐标的命中
-  recall_history  按坐标把原文逐字取回，带 token 预算与如实的省略说明
+  search_history  在整份日志（含被压缩/prune 掉的内容）里检索，返回带 seq 的命中
+  recall_history  按坐标把原文取回（默认不做块级裁剪，预算装得下就是逐字）
 
-外加：每次压缩结束后自动给模型发一条简短提示，告诉它"这段历史被压了、可以这样取回"。
+外加：
+  - 每次压缩/剪除结束后，给模型发一条提示，告诉它"这段历史被压了、可以这样取回"；
+  - 若这条提示后来又被压缩吃掉，会自动补发一条精简版，保证通道始终"可见"。
 
 它不做：替换压缩引擎、修改历史事件、自建存储、向量检索。
 
 
 【前提】
 另一台设备上要装好同一版本的便携版 DSH：@deepseek-ai/dsh 0.1.6-alpha.1。
-（版本不一致时，插件依赖的插件 API 可能不同。）
+（本版本实测环境就是它；版本不一致时，插件依赖的插件 API 可能不同。）
 
 
 【安装】
-1. 把整个压缩包解压到一个**固定位置**（例如 D:\dsh-recall-channel）。
+1. 把整个压缩包解压到一个**固定位置**（例如 D:\dsh-recall-channel-v1.1）。
    注意：装好后这个文件夹不要移动或删除 —— 插件是以 link 方式注册的。
 
 2. 先启动一次 DeepSeek Harness（安装器要靠它自动定位安装目录）。
@@ -28,30 +30,18 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 3. 双击 install.cmd。
    脚本会自动：
      - 找到正在运行的 DeepSeek Harness 安装目录与数据目录
-     - 调用该安装自带的 node 执行 dsh plugin add
-     - 用 --dump-config 校验插件行是否已进入组合配置
+     - 先卸载已装的 dsh-recall-channel（不论哪个版本），再安装本目录这一份
+     - 用 --dump-config 校验插件行是否已进入组合配置，并核对 profile 的链接指向本目录
    如果自动探测失败，改用命令行显式指定：
      install.cmd -DshRoot "D:\某处\DeepSeek-Harness-便携版-0.1.2-alpha.1\DeepSeek Harness"
 
 4. 重启一次 DeepSeek Harness（插件在启动时装载）。
    重启后看启动日志，应出现这一行：
-     [recall-channel] v1.0 ready - 2 tool(s): search_history, recall_history + post-compaction notice
-   这行里的版本号就是「当前跑的是哪个版本」的凭据，回滚后请用它核对。
+     [recall-channel] v1.1.0 ready - 2 tool(s): search_history, recall_history + post-compaction notice
+   这行里的版本号就是「当前跑的是哪个版本」的凭据，换版本后请用它核对。
 
 
-【版本与回滚】
-本包是 v1.0。如果需要换回其它版本（或将来从新版本退回 v1.0）：
-  1) 把目标版本的压缩包解压到**另一个**目录（不要覆盖当前目录）；
-  2) 双击那个目录里的 install.cmd —— 安装器是幂等的：它会先卸载已装的
-     dsh-recall-channel，再装本目录的这一份；
-  3) 重启 DeepSeek Harness；
-  4) 看启动日志里的版本号确认切换成功。
-插件不写任何自有数据，所以换版本不需要数据迁移，历史会话完全不受影响。
-如果曾经在 profile 的 cordis.patch.yml 里写过某个版本专有的配置键，回退到
-旧版本前请先把那些键删掉。
-
-
-【验收（约 5 分钟）】
+【验收（约 8 分钟）】
 0) 先把上下文窗口调小，否则 /compact 会因为"没有可压缩区间"而拒绝执行：
      设置 -> 模型 -> DeepSeek -> 编辑模型 -> 上下文窗口   改成 32000
 
@@ -70,10 +60,34 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
      - 模型先调用 search_history，再调用 recall_history
      - 编号与场景都答对（不是复述摘要里的笼统说法）
 
-6) 测完把上下文窗口改回 1000000。
+6) 【v1.1 新增，核心】再问一句：
+     把刚才那次取回里被省略的中间部分读出来
+   期望：模型用更窄的 fromSeq/toSeq 再取一次，**真的读到内容**。
+   （v1.0 在这一步会返回"已经取回过"，因此这条是 v1.1 的关键差异。）
+
+7) 【v1.1 新增】让模型试一次超大区间，例如让它读 seq 0 到 999999999：
+   期望：正常返回（会被自动夹到日志真实范围），宿主不卡、内存不炸。
+
+8) 【v1.1 新增】中文会话里核对回复中的 "~N tokens" 量级是否合理
+   （旧版按 字符数/4 估算，中文会被低估约 3 倍）。
+
+9) 测完把上下文窗口改回 1000000。
 
 如果模型没有主动调用工具：说明提示没起作用（这是最可能的失败点），
 可以把问题问得更具体，或检查 profile 配置里 hintOnCompaction 是否为 true。
+
+
+【版本与回滚】
+本包是 v1.1。要换回 v1.0（或将来换到其它版本）：
+  1) 把目标版本的压缩包解压到**另一个**目录（不要覆盖当前目录）；
+  2) 双击那个目录里的 install.cmd —— 安装器是幂等的：它会先卸载已装的
+     dsh-recall-channel，再装本目录的这一份；
+  3) 重启 DeepSeek Harness；
+  4) 看启动日志里的版本号确认切换成功（v1.0 会打印 v1.0.0）。
+插件不写任何自有数据，所以换版本不需要数据迁移，历史会话完全不受影响。
+如果曾经在 profile 的 cordis.patch.yml 里写过某个版本专有的配置键，回退到
+旧版本前请先把那些键删掉（v1.0 不认识 v1.1 新增的那些键）。
+更详细的步骤见包内的「回滚到v1.0.txt」。
 
 
 【卸载】
@@ -83,29 +97,44 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 
 
 【配置（可选）】
-写进 profile 的 cordis.patch.yml：
+写进 profile 的 cordis.patch.yml；括号是会被钳制到的范围：
   - id: recall-channel
     config:
-      maxRecallTokens: 16000         单次取回 token 预算
-      maxSessionRecallTokens: 64000  单会话累计预算
-      searchLimit: 20                检索默认命中数
-      snippetChars: 240              命中片段宽度
-      includeReasoning: false        是否把 reasoning 块也纳入取回文本
-      hintOnCompaction: true         压缩后是否发提示
+      maxRecallTokens: 16000          (256..200000)     单次取回 token 预算
+      maxSessionRecallTokens: 64000   (0..2000000)      单会话累计预算；0=关闭取回
+      searchLimit: 20                 (1..100)          检索默认命中数
+      snippetChars: 240               (40..2000)        命中片段宽度
+      scanLimit: 200000               (100..2000000)    单次检索最多扫描的事件数
+      blockChars: 0                   (0..1000000)      取回单块字符上限；0=不裁（逐字）
+      argChars: 0                     (0..1000000)      取回工具参数上限；0=不裁
+      searchTextChars: 200000         (0..5000000)      检索时单事件可搜文本上限
+      maxRangeSeqs: 200000            (1..2000000)      单次 recall 可寻址 seq 数上限
+      allowRegex: true                                   是否允许正则检索
+      regexMaxPatternChars: 200       (8..2000)         正则长度上限
+      regexInputChars: 20000          (1000..5000000)   单事件喂正则的文本上限
+      regexBudgetMs: 250              (10..10000)       正则扫描总时限
+      includeReasoning: false                            是否取回 reasoning 块
+      hintOnCompaction: true                             压缩/剪除后是否发提示
+      notifyOnPrune: true                                prune 是否也发提示
+      noticeRefresh: true                                提示被吃掉后是否自动补发
+      wrapRecalledText: true                             取回文本是否加"数据非指令"围栏
 
 
 【文件清单】
-  install.cmd / install.ps1   一键安装器
+  install.cmd / install.ps1   一键安装器 / 版本切换器（幂等：先卸后装）
   dist\index.js               插件本体（自包含：零运行时 import、零第三方依赖，也不读写任何自有文件）
   lib\*.js                    源码
   cordis.patch.yml            profile 层补丁（声明插件行）
   package.json                包元数据（含 dsh.bundle 声明）
-  test\mechanics.mjs          机制测试：node test\mechanics.mjs（24 项断言）
-  README.md                   详细说明与设计要点
+  test\mechanics.mjs          机制测试：node test\mechanics.mjs（71 项断言，无需联网与依赖）
+  README.md                   详细说明、配置表、已知边界、设计要点
+  CHANGELOG.md                v1.0 -> v1.1 的行为变更
+  审查回应.md                 对四份外部审查报告的逐条判定与处置
+  回滚到v1.0.txt              退回 v1.0 的步骤
   LICENSE                     MIT
 
 
-【三个已知情况】
+【四个已知情况】
 1. 不要用 npx @deepseek-ai/dsh 去装一个全新的 DSH：npm 上 dsh 是 0.1.6-alpha.1，
    而 dsh-app-boot 已经发到 0.1.6-alpha.2，两者不兼容，启动会直接崩
    （SyntaxError: ... does not provide an export named 'watchUserPatches'）。
@@ -117,5 +146,8 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 3. 插件读取会话历史用的是 DSH 的 session.snapshotEvents() / eventAt() 两个
    同步接口。这两个接口在 DSH 源码里已被标注 @deprecated（"新代码禁止调用"），
    但 DSH 0.1.6-alpha.1 的核心代码本身仍在大量使用它们，因此当前完全正常。
-   将来若 DSH 移除这两个接口，插件会失效而不会损坏数据；届时需要更新插件。
-   本版本实测环境：@deepseek-ai/dsh 0.1.6-alpha.1。
+   将来若 DSH 移除这两个接口，插件会报出可读错误而不会损坏数据；届时需要更新插件。
+
+4. 正则检索（regex: true）是尽力而为：插件会拒绝"量词套在含量词/选择分支的组上"
+   这类会指数级回溯的写法（可能误杀 (foo|bar)+ 这类安全写法），并受长度、输入、
+   时限三重限制。要求零风险就把 allowRegex 设成 false。
