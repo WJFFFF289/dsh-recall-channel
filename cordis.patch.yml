@@ -1,0 +1,9 @@
+# dsh-recall-channel — profile layer.
+#
+# Installed as a bundle, this patch inserts the recall-channel row into the
+# composed profile tree. The row resolves the package by name from the
+# profile's node_modules (which outranks the harness installation).
+
+- insert:
+    - id: recall-channel
+      name: dsh-recall-channel

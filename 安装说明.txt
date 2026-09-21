@@ -1,0 +1,100 @@
+﻿dsh-recall-channel 0.1.0 —— 安装与验收说明
+================================================
+
+【这是什么】
+DeepSeek Harness 的「回忆通道」插件。会话被压缩（compaction）之后，原文仍然在
+append-only 的会话日志里，这个插件让模型能自己把被压掉的细节检索出来、逐字取回。
+
+它提供两个工具：
+  search_history  在整份日志（含被压缩掉的内容）里检索，返回带 seq 坐标的命中
+  recall_history  按坐标把原文逐字取回，带 token 预算与如实的省略说明
+
+外加：每次压缩结束后自动给模型发一条简短提示，告诉它"这段历史被压了、可以这样取回"。
+
+它不做：替换压缩引擎、修改历史事件、自建存储、向量检索。
+
+
+【前提】
+另一台设备上要装好同一版本的便携版 DSH：@deepseek-ai/dsh 0.1.6-alpha.1。
+（版本不一致时，插件依赖的插件 API 可能不同。）
+
+
+【安装】
+1. 把整个压缩包解压到一个**固定位置**（例如 D:\dsh-recall-channel）。
+   注意：装好后这个文件夹不要移动或删除 —— 插件是以 link 方式注册的。
+
+2. 先启动一次 DeepSeek Harness（安装器要靠它自动定位安装目录）。
+
+3. 双击 install.cmd。
+   脚本会自动：
+     - 找到正在运行的 DeepSeek Harness 安装目录与数据目录
+     - 调用该安装自带的 node 执行 dsh plugin add
+     - 用 --dump-config 校验插件行是否已进入组合配置
+   如果自动探测失败，改用命令行显式指定：
+     install.cmd -DshRoot "D:\某处\DeepSeek-Harness-便携版-0.1.2-alpha.1\DeepSeek Harness"
+
+4. 重启一次 DeepSeek Harness（插件在启动时装载）。
+
+
+【验收（约 5 分钟）】
+0) 先把上下文窗口调小，否则 /compact 会因为"没有可压缩区间"而拒绝执行：
+     设置 -> 模型 -> DeepSeek -> 编辑模型 -> 上下文窗口   改成 32000
+
+1) 新建会话，对模型说：
+     记一下：故障编号 ZK-7723-PINEAPPLE，是修登录超时时出现的
+
+2) 再随便聊几轮（让这段历史离得远一点）。
+
+3) 输入：
+     /compact
+
+4) 然后问：
+     我们前面那个故障编号是什么？当时在修什么问题？
+
+5) 通过标准：
+     - 模型先调用 search_history，再调用 recall_history
+     - 编号与场景都答对（不是复述摘要里的笼统说法）
+
+6) 测完把上下文窗口改回 1000000。
+
+如果模型没有主动调用工具：说明提示没起作用（这是最可能的失败点），
+可以把问题问得更具体，或检查 profile 配置里 hintOnCompaction 是否为 true。
+
+
+【卸载】
+  dsh plugin --profile web remove dsh-recall-channel
+（或删掉 profile 的 package.json 里该依赖，并清掉 cordis.patch.yml 内相关行。）
+插件不写自有数据，删除即干净，历史会话不受影响。
+
+
+【配置（可选）】
+写进 profile 的 cordis.patch.yml：
+  - id: recall-channel
+    config:
+      maxRecallTokens: 16000         单次取回 token 预算
+      maxSessionRecallTokens: 64000  单会话累计预算
+      searchLimit: 20                检索默认命中数
+      snippetChars: 240              命中片段宽度
+      includeReasoning: false        是否把 reasoning 块也纳入取回文本
+      hintOnCompaction: true         压缩后是否发提示
+
+
+【文件清单】
+  install.cmd / install.ps1   一键安装器
+  dist\index.js               插件本体（自包含，运行时零外部 import）
+  lib\*.js                    源码
+  cordis.patch.yml            profile 层补丁（声明插件行）
+  package.json                包元数据（含 dsh.bundle 声明）
+  test\mechanics.mjs          机制测试：node test\mechanics.mjs（24 项断言）
+  README.md                   详细说明与设计要点
+  LICENSE                     MIT
+
+
+【两个已知情况】
+1. 不要用 npx @deepseek-ai/dsh 去装一个全新的 DSH：npm 上 dsh 是 0.1.6-alpha.1，
+   而 dsh-app-boot 已经发到 0.1.6-alpha.2，两者不兼容，启动会直接崩
+   （SyntaxError: ... does not provide an export named 'watchUserPatches'）。
+   这是上游的版本偏斜问题，与本插件无关。
+
+2. 本插件构建时把依赖内联进 dist/index.js，所以目标机器**不需要**联网，
+   也不需要 node_modules。安装脚本只用该 DSH 自带的 node。

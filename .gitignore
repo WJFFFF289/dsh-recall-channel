@@ -1,0 +1,7 @@
+# Dev-only junction to the harness node_modules: needed to build/test, never shipped.
+node_modules/
+
+# Release staging / scratch
+.release-staging/
+*.zip
+*.log
