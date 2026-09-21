@@ -1,6 +1,6 @@
 {
   "name": "dsh-recall-channel",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Recall channel for DeepSeek Harness: search the durable session log (including content shadowed by compaction) and restore it on demand.",
   "license": "MIT",
   "type": "module",

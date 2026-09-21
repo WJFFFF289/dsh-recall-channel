@@ -1,6 +1,5 @@
-// dsh-recall-channel — bundled build. Runtime imports are inlined; this file needs no node_modules.
+// dsh-recall-channel v1.0.0 — bundled build. Runtime imports are inlined; this file needs no node_modules.
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/cosmokit/lib/index.js
 function isNullable(value) {
   return value === null || value === void 0;
 }
@@ -222,7 +221,6 @@ var Time;
   Time2.template = template;
 })(Time || (Time = {}));
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/schemastery/lib/index.mjs
 var kSchema = /* @__PURE__ */ Symbol.for("schemastery");
 var kValidationError = /* @__PURE__ */ Symbol.for("ValidationError");
 globalThis.__schemastery_index__ ??= 0;
@@ -824,10 +822,7 @@ defineMethod("transform", [
   "preserve"
 ], ({ inner }, isInner) => inner.toString(isInner));
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-llm/lib/index.js
-import { createRequire } from "node:module";
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/cordis/lib/index.js
 var DisposableList = class {
   sn = 0;
   map = /* @__PURE__ */ new Map();
@@ -2550,7 +2545,6 @@ var Service = class Service2 {
   }
 };
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-typert-protocol/lib/index.js
 var RemoteError = class extends Error {
   code;
   details;
@@ -2668,7 +2662,6 @@ function validateName(subject, value) {
   if (!isTypertRemoteSegment(value)) throw new TypeError(`typert-protocol: ${subject} must contain only RPC endpoint segment characters`);
 }
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-util-values/lib/index.js
 function assertNever(value, context) {
   const rendered = JSON.stringify(value) ?? String(value);
   throw new Error(`unreachable variant${context ? ` in ${context}` : ""}: ${rendered}`);
@@ -2849,7 +2842,6 @@ function deepFreeze(value) {
   return value;
 }
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-util-crypto/lib/index.js
 function randomUUID() {
   const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16));
   const hex = Array.from(bytes, (byte, index) => {
@@ -2858,15 +2850,12 @@ function randomUUID() {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-brand/lib/index.js
 function brandString(value) {
   return value;
 }
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-timeout/lib/index.js
 var MAX_TIMER_DELAY_MS = 2147483647;
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-llm/lib/index.js
 function freezeMessage(message) {
   return deepFreeze(structuredClone(message));
 }
@@ -3153,7 +3142,7 @@ function projectImagesForTextModel(messages) {
     };
   });
 }
-var { version } = createRequire(import.meta.url)("../package.json");
+const version = "0.1.6-alpha.1";
 var __runInitializers = function(thisArg, initializers, value) {
   var useValue = arguments.length > 2;
   for (var i = 0; i < initializers.length; i++) value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
@@ -3937,7 +3926,6 @@ function createAnchor(ctx) {
   };
 }
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-scope/lib/index.js
 var NamedEntries = class {
   duplicateError;
   data = /* @__PURE__ */ new Map();
@@ -4153,7 +4141,6 @@ function scopeTarget(base, key) {
   return carrier;
 }
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-sandbox/lib/index.js
 var WIDER_MODES = {
   "read-only": ["workspace-write", "danger-full-access"],
   "workspace-write": ["danger-full-access"]
@@ -4190,7 +4177,6 @@ async function approveEscalation(request, approval) {
   }
 }
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-tools/lib/index.js
 var JsonSchemaError = class extends HarnessError {
   /** Individual schema violations in walk order. */
   violations;
@@ -7176,7 +7162,6 @@ function toolAbortedBeforeDispatchResult(prior) {
   };
 }
 
-// ../../deepseek-harness/DeepSeek-Harness-便携版-0.1.2-alpha.1/DeepSeek Harness/resources/dsh/node_modules/@deepseek-ai/dsh-output-retention/lib/index.js
 function assertBudget(value, name2) {
   if (!Number.isInteger(value) || value < 0) throw new Error(`${name2} must be a non-negative integer`);
 }
@@ -7679,6 +7664,7 @@ ${rendered}`);
 
 // lib/index.js
 var name = "recall-channel";
+var VERSION = false ? "dev" : "1.0.0";
 var inject = ["tools"];
 var Config = Schema.object({
   enabled: Schema.boolean(),
@@ -7723,7 +7709,7 @@ function apply(ctx, config) {
   const anchor = createAnchor(ctx);
   const tools = createTools(resolved, anchor);
   for (const tool of tools) ctx.tools.register(tool);
-  console.log(`[recall-channel] ready - ${tools.length} tool(s): ${tools.map((t) => t && t.name).join(", ")}${resolved.hintOnCompaction ? " + post-compaction notice" : ""}`);
+  console.log(`[recall-channel] v${VERSION} ready - ${tools.length} tool(s): ${tools.map((t) => t && t.name).join(", ")}${resolved.hintOnCompaction ? " + post-compaction notice" : ""}`);
   if (resolved.hintOnCompaction) {
     ctx.on("agent/pre-step", async ({ agent }, next) => {
       const decision = await next();
