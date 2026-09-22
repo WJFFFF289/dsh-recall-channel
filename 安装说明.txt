@@ -1,4 +1,4 @@
-﻿dsh-recall-channel v1.1 —— 安装与验收说明（v1.0 的回滚通道见文末）
+dsh-recall-channel v1.1 —— 安装与验收说明（v1.0 的回滚通道见文末）
 =================================================================
 
 【这是什么】
@@ -77,6 +77,16 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 可以把问题问得更具体，或检查 profile 配置里 hintOnCompaction 是否为 true。
 
 
+【热生效：改配置不用重启】
+安装器会把 profile 清单里的 patchReload 确保为 live。此后修改 profile 的
+cordis.patch.yml（例如调 snippetChars）存盘约 5 秒即生效，不用重启；
+判断依据是启动日志里多出一行 [recall-channel] v1.1.0 ready …。
+两条边界（DSH 装载机制决定，插件绕不过）：
+  - 只管「配置」；换版本或改插件代码（lib\ / dist\）仍需重启一次；
+  - 首次安装也必须重启一次。
+想体检这台设备是否可用：双击 hot-check.cmd（只读，不改动任何东西）。
+
+
 【版本与回滚】
 本包是 v1.1。要换回 v1.0（或将来换到其它版本）：
   1) 把目标版本的压缩包解压到**另一个**目录（不要覆盖当前目录）；
@@ -121,7 +131,8 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 
 
 【文件清单】
-  install.cmd / install.ps1   一键安装器 / 版本切换器（幂等：先卸后装）
+  install.cmd / install.ps1   一键安装器 / 版本切换器（幂等：先卸后装；会确保热生效可用）
+  hot-check.cmd / .ps1        只读体检：本机热生效是否可用（不改动任何东西）
   dist\index.js               插件本体（自包含：零运行时 import、零第三方依赖，也不读写任何自有文件）
   lib\*.js                    源码
   cordis.patch.yml            profile 层补丁（声明插件行）

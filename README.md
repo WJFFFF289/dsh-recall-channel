@@ -46,6 +46,20 @@ dsh plugin --profile web remove dsh-recall-channel
 
 ---
 
+## 热生效（改配置不用重启）
+
+安装器会把 profile 清单里的 `patchReload` 确保为 `live`。此后修改 profile 的
+`cordis.patch.yml`（例如调 `snippetChars`）**存盘约 5 秒即生效，无需重启**；
+判断依据是启动日志里多出一行 `[recall-channel] vX.Y.Z ready …`。
+
+两条边界（由 DSH 的装载机制决定，插件绕不过）：
+
+- 这条通道只管**配置**。换版本、或改插件代码（`lib/`、`dist/`）仍需重启一次——
+  bundle 清单与模块链接是启动期解析的；
+- **首次安装也必须重启一次**，热生效救不了第一次。
+
+设备上是否可用，双击 `hot-check.cmd` 体检（只读，不改动任何东西）。
+
 ## 版本与回滚
 
 - 每个版本都有独立、自足的安装包；安装器是**幂等切换器**：先卸载已装的同名插件，再安装本目录这一份。
