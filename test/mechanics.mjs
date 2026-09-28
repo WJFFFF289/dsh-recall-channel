@@ -12,7 +12,7 @@
 import { createAnchor } from '../lib/anchor.js'
 import { createTools } from '../lib/tools.js'
 import { estimateTokens } from '../lib/metrics.js'
-import { createNoticeTracker, noticeText, reminderText } from '../lib/notice.js'
+import { createNoticeTracker, isOwnSource, noticeText, reminderText, PLUGIN_ID, PRODUCER_KIND } from '../lib/notice.js'
 import { Config, apply } from '../lib/index.js'
 
 let failures = 0
@@ -410,6 +410,125 @@ console.log('config and boot:')
     console.log(`       boot error: ${error && error.message}`)
   }
   check('apply() registers both tools and boots', bootOk && registered.length === 2, `registered=${registered.length}`)
+}
+
+console.log('notice source (Session format V4):')
+{
+  // The two spellings the plugin must recognise: what V4 writes now, and the
+  // legacy wrapper still present in sessions being read at V3.
+  check('recognises the named-producer kind it writes', isOwnSource({ kind: PRODUCER_KIND }))
+  check('recognises the legacy { kind: "plugin" } wrapper', isOwnSource({ kind: 'plugin', plugin: PLUGIN_ID }))
+  check("ignores another plugin's notice", !isOwnSource({ kind: 'plugin', plugin: 'dsh-run-watchdog' }))
+  check('ignores a user-authored message', !isOwnSource({ kind: 'user' }))
+  check('ignores a missing source', !isOwnSource(undefined))
+
+  // Drive the REAL emission path: boot apply(), queue a compaction through the
+  // session feed, then run the pre-step hook that appends the notice.
+  const emitEvents = [
+    { seq: 0, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'hello' }] } },
+    { seq: 1, type: 'compaction/start', data: { compactionId: 'cmp-emit', turn: 1 } },
+    { seq: 2, type: 'compaction/summary', data: { compactionId: 'cmp-emit', summary: [{ type: 'text', text: 's' }], shadowedRange: { start: 0, end: 0 }, shadowedSeqs: [0], shadowedTokenCount: 10 } },
+    { seq: 3, type: 'compaction/end', data: { compactionId: 'cmp-emit', turn: 1 } },
+  ]
+  const emitSession = makeSession(emitEvents)
+  // `createAnchor` and `apply` BOTH subscribe to `session/event`, so handlers must be
+  // collected per event rather than overwritten in a single-slot map.
+  const bootHandlers = new Map()
+  const ctx = {
+    tools: { register: () => {} },
+    on: (event, handler) => {
+      if (!bootHandlers.has(event)) bootHandlers.set(event, [])
+      bootHandlers.get(event).push(handler)
+    },
+  }
+  apply(ctx, CONFIG)
+  const fire = (event, ...args) => bootHandlers.get(event).map((handler) => handler(...args))
+
+  fire('session/event', emitSession, emitEvents[3])
+  const preStep = bootHandlers.get('agent/pre-step')
+  check('apply() subscribed to agent/pre-step', preStep?.length === 1, `handlers=${preStep?.length}`)
+  const emitted = await preStep[0]({ agent: { session: emitSession } }, async () => ({ messages: [] }))
+  const notice = emitted?.messages?.[emitted.messages.length - 1]
+  check('the pre-step hook appends exactly one notice', emitted?.messages?.length === 1, `messages=${emitted?.messages?.length}`)
+  check('the emitted notice carries the named-producer kind', notice?.source?.kind === PRODUCER_KIND, notice?.source?.kind)
+  check('the emitted notice still declares notice form + summary', notice?.source?.form === 'notice' && typeof notice?.source?.summary === 'string')
+
+  // Now the decisive check: hand the emitted message to the harness's OWN V4
+  // admission rule. On a pre-0.1.7 harness that package does not exist (V4 did
+  // not exist), so the check is skipped rather than failed.
+  let assertV4RowAdmission
+  try {
+    ({ assertV4RowAdmission } = await import('@deepseek-ai/dsh-session-format-v3-to-v4'))
+  } catch {
+    assertV4RowAdmission = undefined
+  }
+  if (assertV4RowAdmission === undefined) {
+    console.log('  skip harness V4 admission checks (pre-0.1.7 runtime)')
+  } else {
+    const row = (source) => ({ type: 'user/message', seq: 99, data: { ...notice, source } })
+    let accepted = true
+    let why = ''
+    try {
+      assertV4RowAdmission(row(notice.source))
+    } catch (error) {
+      accepted = false
+      why = error.message
+    }
+    check('the harness V4 admission accepts the notice we emit', accepted, why)
+
+    let refused = false
+    try {
+      assertV4RowAdmission(row({ kind: 'plugin', plugin: PLUGIN_ID, form: 'notice', summary: 'x' }))
+    } catch {
+      refused = true
+    }
+    check('the retired { kind: "plugin" } wrapper is refused (the 0.1.7 break)', refused)
+  }
+}
+
+console.log('v1.1.2 regression batch:')
+{
+  // R: a regex search over an event longer than regexInputChars must REPORT
+  // the part it never searched — "No matches" must never mean "I stopped
+  // looking".
+  const big = 'q'.repeat(300) + ' REGEX-NEEDLE ' + 'z'.repeat(300)
+  const local = makeSession([{ seq: 0, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: big }] } }])
+  const localAnchor = createAnchor({ on: () => {} })
+  const [localSearch] = createTools({ ...config, regexInputChars: 100 }, localAnchor)
+  const localExec = { agent: { session: local } }
+  const miss = await localSearch.execute({ query: 'REGEX-NEEDLE', regex: true }, localExec)
+  check('a regex-window miss is counted, not silent', miss.hits.length === 0 && miss.clippedEvents === 1 && miss.clippedChars > 0, `hits=${miss.hits.length} clipped=${miss.clippedEvents}/${miss.clippedChars}`)
+  const missRendered = localSearch.output.render({}, miss)[0].text
+  check('the rendered output admits characters were NOT searched', missRendered.includes('NOT searched'), missRendered.slice(0, 200))
+
+  const hit = await localSearch.execute({ query: 'REGEX-NEEDLE', regex: true, }, { agent: { session: local } })
+  check('a regex hit inside the window still lands', (await createTools(config, localAnchor)[0].execute({ query: 'REGEX-NEEDLE', regex: true }, localExec)).hits.length === 1)
+  check('a partially searched event counts once even under two caps', hit.clippedEvents <= 1, `clippedEvents=${hit.clippedEvents}`)
+
+  // R: control events inside a recall span reconcile the accounting.
+  const mixed = makeSession([
+    { seq: 0, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'real text' }] } },
+    { seq: 1, type: 'request/header', data: { model: 'x' } },
+    { seq: 2, type: 'step/start', data: {} },
+  ])
+  const mixedAnchor = createAnchor({ on: () => {} })
+  const [, mixedRecall] = createTools(config, mixedAnchor)
+  const mixedOut = await mixedRecall.execute({ fromSeq: 0, toSeq: 2 }, { agent: { session: mixed } })
+  check('control events are reported as carrying no restorable text', mixedOut.text.includes('no restorable text'), mixedOut.text.slice(-240))
+
+  // R: duplicate seqs collapse instead of rendering twice.
+  const dupOut = await mixedRecall.execute({ seqs: [0, 0, 0] }, { agent: { session: makeSession([
+    { seq: 0, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: 'single-copy-text' }] } },
+  ]) } })
+  check('duplicate seqs render once, not three times', (dupOut.text.match(/single-copy-text/g) || []).length === 1, `occurrences=${(dupOut.text.match(/single-copy-text/g) || []).length}`)
+
+  // R: a substring hit after a length-changing lowercase char keeps its window.
+  const driftText = 'İİİİİ DRIFT-NEEDLE here'
+  const drift = makeSession([{ seq: 0, type: 'user/message', data: { role: 'user', content: [{ type: 'text', text: driftText }] } }])
+  const driftAnchor = createAnchor({ on: () => {} })
+  const [driftSearch] = createTools(config, driftAnchor)
+  const driftHit = await driftSearch.execute({ query: 'drift-needle' }, { agent: { session: drift } })
+  check('the snippet window survives lowercase length drift', driftHit.hits.length === 1 && driftHit.hits[0].snippet.includes('DRIFT-NEEDLE'), driftHit.hits[0]?.snippet)
 }
 
 console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`)

@@ -33,7 +33,7 @@ dsh --profile web --dump-config | grep recall-channel
 启动日志里会打印版本号，这是判断"当前跑的是哪一版"的凭据：
 
 ```
-[recall-channel] v1.1.0 ready - 2 tool(s): search_history, recall_history + post-compaction notice
+[recall-channel] v1.1.2 ready - 2 tool(s): search_history, recall_history + post-compaction notice
 ```
 
 卸载：
@@ -161,7 +161,12 @@ dsh plugin --profile web remove dsh-recall-channel
 3. **正则检索是尽力而为**：会拒绝"量词套在含量词/含选择分支的组上"这类灾难性回溯形态（可能误杀 `(foo|bar)+` 这类安全写法），并受长度、输入、时限三重限制；要求零风险就设 `allowRegex: false`。
 4. **`compaction/prune` 也能取回**：prune 掉的是单条工具结果，插件把它一并索引，id 形如 `prune:<seq>`。
 5. **取回文本会带上"这是历史数据、不是指令"的围栏**：围栏只在正文之外，正文一个字节都不改。可用 `wrapRecalledText: false` 关掉。
-6. **依赖 DSH 的同步读接口** `session.snapshotEvents()` / `eventAt()`。这两个接口在 DSH 源码里标了 `@deprecated`（"新代码禁止调用"），但 0.1.6-alpha.1 的核心代码本身仍在大量使用。若将来被移除，插件会给出可读报错而不是静默失效。实测版本：`@deepseek-ai/dsh 0.1.6-alpha.1`。
+6. **依赖 DSH 的同步读接口** `session.snapshotEvents()` / `eventAt()`。这两个接口在 DSH 源码里标了 `@deprecated`（"新代码禁止调用"），但 0.1.7-alpha.2 的核心代码本身仍在大量使用，签名未变。若将来被移除，插件会给出可读报错而不是静默失效。实测版本：`@deepseek-ai/dsh 0.1.7-alpha.2`。
+7. **依赖 DSH 的消息来源命名约定**。DSH 0.1.7 的 Session format V4 拒绝旧的
+   `{ kind: 'plugin', plugin }` catch-all，第三方生产者必须自称身份。本插件写入
+   `kind: 'plugin:dsh-recall-channel'`——与 DSH 自己的 V3→V4 迁移对未知插件的兜底命名一致；
+   识别时两种写法都接受。构建时若上游改动该约定，`test/mechanics.mjs` 会通过
+   DSH 自己的 `assertV4RowAdmission()` 直接报错。
 7. **工具结果的"来源"从相邻的 `## tool_call <name>` 行读出**：渲染里 `tool_result` 本身不带工具名。
 
 ---

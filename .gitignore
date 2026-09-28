@@ -5,3 +5,7 @@ node_modules/
 .release-staging/
 *.zip
 *.log
+
+# Local backup artifacts (never shipped)
+*.bak
+*-bak

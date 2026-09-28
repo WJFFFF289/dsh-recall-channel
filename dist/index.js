@@ -1,4 +1,4 @@
-// dsh-recall-channel v1.1.0 — bundled build. Runtime imports are inlined; this file needs no node_modules.
+// dsh-recall-channel v1.1.2 — bundled build. Runtime imports are inlined; this file needs no node_modules.
 
 function isNullable(value) {
   return value === null || value === void 0;
@@ -24,6 +24,32 @@ function defineProperty(object, key, value) {
     value,
     enumerable: false
   });
+}
+var write = /* @__PURE__ */ Symbol.for("cosmokit.volatile.write");
+function snapshot(value, ancestors = /* @__PURE__ */ new Set()) {
+  if (typeof value === "function") throw new TypeError("volatile config cannot contain functions");
+  if (value === null || typeof value !== "object") return value;
+  if (ancestors.has(value)) throw new TypeError("volatile config cannot contain cycles");
+  ancestors.add(value);
+  try {
+    if (Array.isArray(value)) return Object.freeze(value.map((item) => snapshot(item, ancestors)));
+    if (Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) throw new TypeError("volatile config objects must be plain objects or arrays");
+    return Object.freeze(Object.fromEntries(Object.entries(value).map(([key, item]) => [key, snapshot(item, ancestors)])));
+  } finally {
+    ancestors.delete(value);
+  }
+}
+function createVolatile(value) {
+  let current = snapshot(value);
+  return Object.freeze({
+    get: () => current,
+    [write]: (value2) => {
+      current = value2;
+    }
+  });
+}
+function isVolatile(value) {
+  return typeof value === "object" && value !== null && write in value;
 }
 function is(type, value) {
   if (arguments.length === 1) return (value2) => is(type, value2);
@@ -103,24 +129,37 @@ function clone(source, refs = /* @__PURE__ */ new Map()) {
   return result;
 }
 function deepEqual(a, b, strict) {
-  if (a === b) return true;
-  if (!strict && isNullable(a) && isNullable(b)) return true;
-  if (typeof a !== typeof b) return false;
-  if (typeof a !== "object") return false;
-  if (!a || !b) return false;
-  function check(test, then) {
-    return test(a) ? test(b) ? then(a, b) : false : test(b) ? false : void 0;
+  const ancestors = /* @__PURE__ */ new Set();
+  function compare(a2, b2) {
+    if (a2 === b2) return true;
+    if (isVolatile(a2) || isVolatile(b2)) return isVolatile(a2) && isVolatile(b2);
+    if (!strict && isNullable(a2) && isNullable(b2)) return true;
+    if (typeof a2 !== typeof b2 || typeof a2 !== "object" || !a2 || !b2) return false;
+    if (ancestors.has(a2)) return false;
+    function check(test, then) {
+      return test(a2) ? test(b2) ? then(a2, b2) : false : test(b2) ? false : void 0;
+    }
+    ancestors.add(a2);
+    try {
+      return check(Array.isArray, (a3, b3) => {
+        if (a3.length !== b3.length) return false;
+        for (let index = 0; index < a3.length; index++) if (!compare(a3[index], b3[index])) return false;
+        return true;
+      }) ?? check(is("Date"), (a3, b3) => a3.valueOf() === b3.valueOf()) ?? check(is("URL"), (a3, b3) => a3.href === b3.href) ?? check(is("RegExp"), (a3, b3) => a3.source === b3.source && a3.flags === b3.flags) ?? check(isArrayBufferLike, (a3, b3) => {
+        if (a3.byteLength !== b3.byteLength) return false;
+        const viewA = new Uint8Array(a3);
+        const viewB = new Uint8Array(b3);
+        for (let i = 0; i < viewA.length; i++) if (viewA[i] !== viewB[i]) return false;
+        return true;
+      }) ?? ((!strict || [a2, b2].every((value) => Object.getPrototypeOf(value) === Object.prototype || Object.getPrototypeOf(value) === null)) && Object.keys({
+        ...a2,
+        ...b2
+      }).every((key) => compare(a2[key], b2[key])));
+    } finally {
+      ancestors.delete(a2);
+    }
   }
-  return check(Array.isArray, (a2, b2) => a2.length === b2.length && a2.every((item, index) => deepEqual(item, b2[index]))) ?? check(is("Date"), (a2, b2) => a2.valueOf() === b2.valueOf()) ?? check(is("RegExp"), (a2, b2) => a2.source === b2.source && a2.flags === b2.flags) ?? check(isArrayBufferLike, (a2, b2) => {
-    if (a2.byteLength !== b2.byteLength) return false;
-    const viewA = new Uint8Array(a2);
-    const viewB = new Uint8Array(b2);
-    for (let i = 0; i < viewA.length; i++) if (viewA[i] !== viewB[i]) return false;
-    return true;
-  }) ?? Object.keys({
-    ...a,
-    ...b
-  }).every((key) => deepEqual(a[key], b[key], strict));
+  return compare(a, b);
 }
 function tokenize(source, delimiters, delimiter) {
   const output = [];
@@ -397,6 +436,7 @@ Schema.prototype.pattern = function pattern(regexp) {
   return schema;
 };
 Schema.prototype.simplify = function simplify(value) {
+  if (isVolatile(value)) value = value.get();
   if (deepEqual(value, this.meta.default, this.type === "dict")) return null;
   if (isNullable(value)) return value;
   if (this.type === "object" || this.type === "dict") {
@@ -454,12 +494,49 @@ for (const key of [
   };
   return schema;
 } });
+Schema.prototype.volatile = function volatile() {
+  if (this.meta.volatile) throw new TypeError("volatile schema is already wrapped");
+  return this.extra("volatile", true);
+};
 var resolvers = {};
+var checkedVolatile = /* @__PURE__ */ Symbol("checked-volatile-schema");
+function validateVolatileSchema(schema, path = [], blocked = false, seen = /* @__PURE__ */ new Map()) {
+  const states = seen.get(schema) ?? /* @__PURE__ */ new Set();
+  if (states.has(blocked)) return;
+  states.add(blocked);
+  seen.set(schema, states);
+  if (schema.meta?.volatile && blocked) throw new ValidationError("volatile fields require a fixed object path without an enclosing volatile field", { path });
+  const nested = blocked || !!schema.meta?.volatile;
+  if (schema.dict) for (const [key, child] of Object.entries(schema.dict)) validateVolatileSchema(child, [...path, key], nested, seen);
+  if (schema.sKey) validateVolatileSchema(schema.sKey, [...path, "<key>"], true, seen);
+  if (schema.inner && (schema.type !== "lazy" || schema.inner[kSchema])) validateVolatileSchema(schema.inner, [...path, "*"], true, seen);
+  if (schema.list) for (let index = 0; index < schema.list.length; index++) validateVolatileSchema(schema.list[index], [...path, String(index)], true, seen);
+}
 Schema.extend = function extend(type, resolve2) {
   resolvers[type] = resolve2;
 };
 Schema.resolve = function resolve(data, schema, options = {}, strict = false) {
   if (!schema) return [data];
+  if (!options[checkedVolatile]) {
+    validateVolatileSchema(schema, options.path);
+    options = {
+      ...options,
+      [checkedVolatile]: true
+    };
+  }
+  if (schema.meta?.volatile) {
+    const inner = Schema(schema);
+    inner.meta = {
+      ...schema.meta,
+      volatile: false
+    };
+    const [value, adapted] = Schema.resolve(data, inner, options, strict);
+    try {
+      return [createVolatile(value), adapted];
+    } catch (error) {
+      throw new ValidationError(error instanceof Error ? error.message : String(error), options);
+    }
+  }
   if (options.ignore?.(data, schema)) return [data];
   if (isNullable(data) && schema.type !== "lazy") {
     if (schema.meta.required) throw new ValidationError(`missing required value`, options);
@@ -567,6 +644,7 @@ Schema.extend("lazy", (data, schema, options, strict) => {
       ...schema.meta,
       ...schema.inner.meta
     };
+    validateVolatileSchema(schema.inner, options.path, true);
   }
   return Schema.resolve(data, schema.inner, options, strict);
 });
@@ -666,7 +744,7 @@ function property(data, key, schema, options) {
   } catch (e) {
     if (!options?.autofix) throw e;
     delete data[key];
-    return schema.meta.default;
+    return schema.meta.volatile ? createVolatile(schema.meta.default) : schema.meta.default;
   }
 }
 Schema.extend("array", (data, { inner, meta }, options) => {
@@ -1400,8 +1478,9 @@ var LoggerService = class LoggerService2 {
   */
   exporter(exporter) {
     return this.ctx.effect(() => {
-      this.exporters.set(++this._snExporter, exporter);
-      return () => this.exporters.delete(this._snExporter);
+      const id = ++this._snExporter;
+      this.exporters.set(id, exporter);
+      return () => this.exporters.delete(id);
     }, "ctx.logger.exporter()");
   }
   _resolveConfig() {
@@ -2183,8 +2262,8 @@ var Fiber = class {
   *
   * @param config — the new raw config; validated before anything restarts.
   * @param noSave — hint for persistence hooks not to write the change back.
-  * @returns the update waterfall result; the default restart returns a promise.
-  * @throws when validation, an update listener, or the restarted plugin fails.
+  * @returns nothing; the restart runs behind the `internal/update` waterfall.
+  * @throws {ValidationError} when the new config fails validation.
   */
   update(config, noSave = false) {
     this.assertActive();
@@ -2196,7 +2275,7 @@ var Fiber = class {
       return;
     }
     config = this._resolveConfig(config);
-    return this.context.waterfall(this, "internal/update", config, noSave, () => {
+    this.context.waterfall(this, "internal/update", config, noSave, () => {
       this.config = config;
       this._error = void 0;
       return this.restart();
@@ -2572,6 +2651,8 @@ function bindTypertRemote(service, serviceKey, options = {}) {
   validateName("service key", serviceKey);
   const namespace = options.namespace ?? serviceKey;
   validateName("namespace", namespace);
+  const ctx = Reflect.get(service, "ctx");
+  if (ctx instanceof Context) provideInvocationAccessor(ctx);
   return Object.freeze({
     service,
     serviceKey,
@@ -2592,6 +2673,10 @@ var TypertRemoteService = class extends Service {
     this.typertRemote = bindTypertRemote(this, this.name, options);
   }
 };
+function provideInvocationAccessor(ctx) {
+  if (Object.hasOwn(ctx.root.reflect.props, "invocation")) return;
+  ctx.root.accessor("invocation", { get: () => void 0 });
+}
 function Remote(methodExportOrOptions, context) {
   if (typeof methodExportOrOptions === "string") {
     validateName("Remote export name", methodExportOrOptions);
@@ -2860,10 +2945,10 @@ function freezeMessage(message) {
   return deepFreeze(structuredClone(message));
 }
 function createMessage(input) {
-  return freezeMessage({
+  return deepFreeze(structuredClone({
     ...input,
     id: brandString(randomUUID())
-  });
+  }));
 }
 function createUserMessage(input) {
   return createMessage({
@@ -3058,10 +3143,10 @@ function textOnlyImageText(ref) {
   return `[image omitted because this model accepts text only; attachment sha256:${String(ref.attachmentId).slice(7, 15)}]`;
 }
 function contentHasImage(content) {
-  return content.some((block) => block.type === "image" || block.type === "tool-result" && contentHasImage(block.content));
+  return content.some((block) => block.type === "image");
 }
 function contentHasFile(content) {
-  for (const block of content) if (block.type === "file" || block.type === "tool-result" && contentHasFile(block.content)) return true;
+  for (const block of content) if (block.type === "file") return true;
   return false;
 }
 function fileHandleText(ref, readonlyPath) {
@@ -3080,17 +3165,6 @@ function replaceFilesWithHandles(blocks, resolvePath) {
         text: fileHandleText(block.attachment, resolvePath(block.attachment))
       });
       continue;
-    }
-    if (block.type === "tool-result") {
-      const content = replaceFilesWithHandles(block.content, resolvePath);
-      if (content !== block.content) {
-        next ??= blocks.slice(0, index);
-        next.push({
-          ...block,
-          content
-        });
-        continue;
-      }
     }
     next?.push(block);
   }
@@ -3117,17 +3191,6 @@ function replaceImagesForTextModel(blocks) {
       });
       continue;
     }
-    if (block.type === "tool-result") {
-      const content = replaceImagesForTextModel(block.content);
-      if (content !== block.content) {
-        next ??= blocks.slice(0, index);
-        next.push({
-          ...block,
-          content
-        });
-        continue;
-      }
-    }
     next?.push(block);
   }
   return next ?? blocks;
@@ -3142,7 +3205,7 @@ function projectImagesForTextModel(messages) {
     };
   });
 }
-const version = "0.1.6-alpha.1";
+const version = "0.1.7-alpha.2";
 var __runInitializers = function(thisArg, initializers, value) {
   var useValue = arguments.length > 2;
   for (var i = 0; i < initializers.length; i++) value = useValue ? initializers[i].call(thisArg, value) : initializers[i].call(thisArg);
@@ -3464,7 +3527,8 @@ var LlmRuntime = (() => {
           id: model.id,
           ...model.name === void 0 ? {} : { name: model.name },
           ...model.contextWindow === void 0 ? {} : { contextWindow: model.contextWindow },
-          ...model.maxTokens === void 0 ? {} : { maxTokens: model.maxTokens }
+          ...model.maxTokens === void 0 ? {} : { maxTokens: model.maxTokens },
+          ...model.inputModalities === void 0 ? {} : { inputModalities: [...model.inputModalities] }
         });
       }
       return models;
@@ -3693,8 +3757,9 @@ var LlmRuntime = (() => {
     /** Remove replay state whose historical route is owned by another adapter. */
     forAdapter(options, adapter) {
       const messages = options.messages.map((message) => {
+        if (message.role !== "assistant") return message;
         const source = message.source;
-        if (message.role !== "assistant" || source.kind !== "model" || source.replayState === void 0) return message;
+        if (source.replayState === void 0) return message;
         if (this.adapters.get(source.provider)?.adapter === adapter) return message;
         return freezeMessage({
           ...message,
@@ -4178,6 +4243,7 @@ function validateEscalationArgs(sandboxPermissions, justification) {
 }
 async function approveEscalation(request, approval) {
   const { requestedMode: mode, effectiveMode, justification, subject } = request;
+  if (mode === effectiveMode) return effectiveMode;
   if (!(WIDER_MODES[effectiveMode] ?? []).includes(mode)) throw new Error(`sandbox escalation to "${mode}" is not strictly wider than this call's current "${effectiveMode}" mode`);
   if (approval.approver === void 0) throw new Error(`sandbox escalation to "${mode}" requires approval, but no approval service is composed`);
   if (approval.agent === void 0) throw new Error(`sandbox escalation to "${mode}" requires approval, but the call has no agent to route it through`);
@@ -4921,6 +4987,7 @@ var ToolArgsError = class extends HarnessError {
 function defineTool(options) {
   const userExecute = options.execute;
   const userFinalizeContent = options.finalizeContent;
+  const userProjectContent = options.projectContent;
   const userRender = options.output.render;
   const userPresentationMeta = options.output.presentationMeta;
   const userPresentCall = options.presentCall;
@@ -4943,6 +5010,7 @@ function defineTool(options) {
         return userPresentationMeta(args, value);
       } } : {}
     },
+    ...options.deferLoading === true ? { deferLoading: options.deferLoading } : {},
     ...options.timeoutMs !== void 0 ? { timeoutMs: options.timeoutMs } : {},
     async execute(args, exec) {
       const violations = validate(args);
@@ -4950,6 +5018,7 @@ function defineTool(options) {
       return userExecute(args, exec);
     }
   };
+  if (userProjectContent) tool.projectContent = (exec, result) => userProjectContent(exec, result);
   if (userFinalizeContent) tool.finalizeContent = (exec, result) => userFinalizeContent(exec, result);
   if (userPresentCall) tool.presentCall = (args) => {
     if (validate(args).length > 0) return void 0;
@@ -5026,17 +5095,17 @@ var CodeRunFailedError = class extends HarnessError {
   }
 };
 function jsonNormalizeArgs(value) {
-  let snapshot;
+  let snapshot2;
   try {
-    snapshot = snapshotJsonValue(value);
+    snapshot2 = snapshotJsonValue(value);
   } catch (error) {
     throw new Error(`tool arguments must be lossless JSON: ${error instanceof Error ? error.message : String(error)}`);
   }
-  if (snapshot === void 0) throw new Error("tool arguments must be lossless JSON (call the tool with an arguments object, e.g. `{}`)");
-  const logged = snapshotJsonValue(snapshot);
+  if (snapshot2 === void 0) throw new Error("tool arguments must be lossless JSON (call the tool with an arguments object, e.g. `{}`)");
+  const logged = snapshotJsonValue(snapshot2);
   if (logged === void 0) throw new Error("tool arguments could not be detached for durable logging");
   return {
-    dispatched: snapshot,
+    dispatched: snapshot2,
     logged
   };
 }
@@ -5383,10 +5452,7 @@ function createRunCodeTool(registry, options) {
               const result = parked.kind === "post-result" ? await scheduler.finalize(parked.exec, parked.result) : scheduler.finish(parked.exec, parked.result);
               if (!result.isError && result.content.some((block) => block.type === "image")) exec.deferContext(createUserMessage({
                 content: result.content,
-                source: {
-                  kind: "plugin",
-                  plugin: "tools-ptc"
-                }
+                source: { kind: "ptc-mode" }
               }));
               for (const context of result.additionalContexts ?? []) exec.deferContext(context);
               if (result.concludesTurn) exec.concludeTurn();
@@ -6179,6 +6245,8 @@ var ToolRuntime = class extends Service {
   cancellationStates = /* @__PURE__ */ new WeakMap();
   /** Definition-owned final content transform snapshotted before policy begins. */
   contentFinalizers = /* @__PURE__ */ new WeakMap();
+  /** Execution-prepared content installed before post-execute policy. */
+  contentProjectors = /* @__PURE__ */ new WeakMap();
   layers = new ScopedLayers((scope) => new ToolLayer(scope), () => {
     this.ctx.emit("tools/change");
   });
@@ -6527,13 +6595,14 @@ var ToolRuntime = class extends Service {
   }
   /** Project one definition onto the model-facing schema fields. */
   schemaOf(definition, detachParameters) {
-    const { name: name2, description, parameters } = definition;
+    const { name: name2, description, parameters, deferLoading } = definition;
     const detached = detachParameters ? snapshotJsonValue(parameters) : parameters;
     if (detached === void 0) throw new Error(`tool "${name2}" parameters must be lossless JSON before schema projection`);
     return {
       name: name2,
       description,
-      parameters: detached
+      parameters: detached,
+      ...deferLoading === true ? { deferLoading } : {}
     };
   }
   /**
@@ -6649,6 +6718,7 @@ var ToolRuntime = class extends Service {
       }
     };
     const capturedFinalizer = visible?.finalizeContent?.bind(visible);
+    const capturedProjector = visible?.projectContent?.bind(visible);
     const finalizerFor = () => collapsed && !signal.aborted ? void 0 : capturedFinalizer;
     try {
       const detached = snapshotJsonValue(exec.arguments);
@@ -6659,6 +6729,7 @@ var ToolRuntime = class extends Service {
       };
       this.deferredContexts.set(execution, deferredContexts);
       this.contentFinalizers.set(execution, finalizerFor());
+      if (!collapsed) this.contentProjectors.set(execution, capturedProjector);
       this.cancellationStates.set(execution, {
         callerSignal: signal,
         bodyInvoked: false
@@ -6844,7 +6915,14 @@ var ToolRuntime = class extends Service {
   */
   async finalizeScheduledExecution(exec, result) {
     try {
-      const postResult = await this.postExecute(exec, result);
+      const project = this.contentProjectors.get(exec);
+      this.contentProjectors.delete(exec);
+      const content = project?.(exec, result);
+      const projected = content === void 0 ? result : this.markCanonical(exec, this.materializeFinalResult({
+        ...result,
+        content
+      }));
+      const postResult = await this.postExecute(exec, projected);
       return this.finishScheduledExecution(exec, this.callerCancelled(exec) && !postResult.isError ? this.cancellationResult(exec, postResult) : postResult);
     } catch (error) {
       return this.finishScheduledExecution(exec, toolErrorResult(error));
@@ -7362,6 +7440,18 @@ function windowAround(text, index, width) {
   const tail = end < s.length ? "\u2026" : "";
   return head + s.slice(start, end).replace(/\s+/g, " ").trim() + tail;
 }
+function originalIndexOfLowercased(text, lowercasedIndex) {
+  const s = typeof text === "string" ? text : "";
+  if (!Number.isFinite(lowercasedIndex) || lowercasedIndex <= 0) return 0;
+  let lc = 0;
+  let original = 0;
+  for (const ch of s) {
+    if (lc >= lowercasedIndex) return original;
+    lc += ch.toLowerCase().length;
+    original += ch.length;
+  }
+  return s.length;
+}
 
 // lib/render.js
 var DEFAULT_ARG_CHARS = 0;
@@ -7605,7 +7695,7 @@ function createTools(config, anchor) {
           lines.push(`The scan stopped after ${value.scanned} searchable event(s) (scanLimit); the rest of the log was NOT searched \u2014 narrow the range or raise scanLimit.`);
         }
         if (value.clippedEvents > 0) {
-          lines.push(`${value.clippedEvents} oversized event(s) were searched only up to searchTextChars: ${value.clippedChars} character(s) were NOT searched.`);
+          lines.push(`${value.clippedEvents} oversized event(s) were searched only partially (per-event caps searchTextChars / regexInputChars): ${value.clippedChars} character(s) were NOT searched.`);
         }
         if (value.regexTimedOut) {
           lines.push("The regex scan hit its time budget; later events were NOT searched \u2014 narrow the range, or use a plain substring query.");
@@ -7648,6 +7738,7 @@ function createTools(config, anchor) {
       const deadline = Date.now() + config.regexBudgetMs;
       for (const event of session.snapshotEvents()) {
         if (shadowedSet && !shadowedSet.has(event.seq)) continue;
+        const largeBefore = searchStats.largeEvents;
         const text = eventSearchText(event, searchOpts, searchStats);
         if (!text) continue;
         if (scanned >= config.scanLimit) {
@@ -7661,10 +7752,16 @@ function createTools(config, anchor) {
             regexTimedOut = true;
             break;
           }
-          const window = config.regexInputChars > 0 && text.length > config.regexInputChars ? text.slice(0, config.regexInputChars) : text;
+          let window = text;
+          if (config.regexInputChars > 0 && text.length > config.regexInputChars) {
+            searchStats.cappedChars += text.length - config.regexInputChars;
+            if (searchStats.largeEvents === largeBefore) searchStats.largeEvents += 1;
+            window = text.slice(0, config.regexInputChars);
+          }
           index = window.search(matcher);
         } else {
-          index = text.toLowerCase().indexOf(needle);
+          const loweredIndex = text.toLowerCase().indexOf(needle);
+          index = loweredIndex < 0 ? -1 : originalIndexOfLowercased(text, loweredIndex);
         }
         if (index < 0) continue;
         const owner = ownerOf.get(event.seq);
@@ -7752,7 +7849,7 @@ function createTools(config, anchor) {
         if (args.seqs.length > config.maxRangeSeqs) {
           throw new Error(`recall_history: too many seqs (${args.seqs.length}, max ${config.maxRangeSeqs} per call)`);
         }
-        seqs = args.seqs;
+        seqs = [...new Set(args.seqs)];
         label = `seqs ${seqs[0]}\u2013${seqs[seqs.length - 1]}`;
       } else if (Number.isInteger(args.fromSeq) && Number.isInteger(args.toSeq)) {
         const lo = Math.min(args.fromSeq, args.toSeq);
@@ -7803,6 +7900,7 @@ ${rangeNotes.join("\n")}` : ""}`,
       const clipStats = createClipStats();
       const chunks = [];
       const missing = [];
+      let noText = 0;
       let cursor = 0;
       for (const seq of fresh) {
         let event;
@@ -7816,7 +7914,10 @@ ${rangeNotes.join("\n")}` : ""}`,
           continue;
         }
         const rendered = renderEvent(event, config, clipStats);
-        if (!rendered) continue;
+        if (!rendered) {
+          noText += 1;
+          continue;
+        }
         const text2 = `--- seq ${seq} ---
 ${rendered}`;
         if (chunks.length > 0) cursor += 2;
@@ -7894,6 +7995,7 @@ ${tail.text}`;
         notes.push(`Already delivered in full earlier in this conversation, so not re-sent: ${skipped.slice(0, 20).join(", ")}${skipped.length > 20 ? ` \u2026(+${skipped.length - 20})` : ""}`);
       }
       if (missing.length > 0) notes.push(`Not addressable (no such event): ${missing.slice(0, 20).join(", ")}${missing.length > 20 ? ` \u2026(+${missing.length - 20})` : ""}`);
+      if (noText > 0) notes.push(`${noText} event(s) in the requested span carry no restorable text (control events such as request/step records) \u2014 nothing exists to deliver for them.`);
       const shadowedSet = anchor.shadowedSeqSet(session);
       const visibleCount = seqs.filter((seq) => !shadowedSet.has(seq)).length;
       if (visibleCount > 0) notes.push(`${visibleCount} of the requested event(s) are not marked as shadowed \u2014 they may still be in your visible context.`);
@@ -7941,6 +8043,12 @@ ${fenceTail}` : text : "";
 
 // lib/notice.js
 var PLUGIN_ID = "dsh-recall-channel";
+var PRODUCER_KIND = `plugin:${PLUGIN_ID}`;
+function isOwnSource(source) {
+  if (!source || typeof source !== "object") return false;
+  if (source.kind === PRODUCER_KIND) return true;
+  return source.kind === "plugin" && source.plugin === PLUGIN_ID;
+}
 function entryLine(entry) {
   const count = entry.shadowedSeqs.length;
   const tokens = entry.shadowedTokenCount;
@@ -8011,7 +8119,7 @@ function createNoticeTracker() {
 
 // lib/index.js
 var name = "recall-channel";
-var VERSION = false ? "dev" : "1.1.0";
+var VERSION = false ? "dev" : "1.1.2";
 var inject = ["tools"];
 var Config = Schema.object({
   enabled: Schema.boolean(),
@@ -8076,8 +8184,7 @@ function apply(ctx, config) {
   console.log(`[recall-channel] v${VERSION} ready - ${tools.length} tool(s): ${tools.map((t) => t && t.name).join(", ")}${resolved.hintOnCompaction ? " + post-compaction notice" : ""}`);
   ctx.on("session/event", (session, event) => {
     if (!event || event.type !== "user/message") return;
-    const source = event.data && event.data.source;
-    if (!source || source.kind !== "plugin" || source.plugin !== PLUGIN_ID) return;
+    if (!isOwnSource(event.data && event.data.source)) return;
     notices.recordNotice(session, event.seq);
   });
   if (resolved.hintOnCompaction) {
@@ -8102,7 +8209,10 @@ function apply(ctx, config) {
       if (!text) return decision;
       const notice = createUserMessage({
         content: [{ type: "text", text }],
-        source: { kind: "plugin", plugin: PLUGIN_ID, form: "notice", summary }
+        // Format V4 refuses the retired `{ kind: 'plugin', plugin }` wrapper, so the
+        // producer names itself instead. Do not "simplify" this back — that exact
+        // shape is what a V4 session rejects at write time.
+        source: { kind: PRODUCER_KIND, form: "notice", summary }
       });
       return { ...decision, messages: [...decision.messages, notice] };
     }, { prepend: true });

@@ -17,8 +17,10 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 
 
 【前提】
-另一台设备上要装好同一版本的便携版 DSH：@deepseek-ai/dsh 0.1.6-alpha.1。
+另一台设备上要装好同一版本的便携版 DSH：@deepseek-ai/dsh 0.1.7-alpha.2。
 （本版本实测环境就是它；版本不一致时，插件依赖的插件 API 可能不同。）
+若目标机仍是 0.1.6-alpha.1，请用本插件的 v1.1.0 而不是本版——本版写入的消息来源
+kind 是 V4 语法，在 0.1.6 上虽然也能写（那个版本不校验），但没有意义。
 
 
 【安装】
@@ -37,7 +39,7 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 
 4. 重启一次 DeepSeek Harness（插件在启动时装载）。
    重启后看启动日志，应出现这一行：
-     [recall-channel] v1.1.0 ready - 2 tool(s): search_history, recall_history + post-compaction notice
+     [recall-channel] v1.1.2 ready - 2 tool(s): search_history, recall_history + post-compaction notice
    这行里的版本号就是「当前跑的是哪个版本」的凭据，换版本后请用它核对。
 
 
@@ -80,7 +82,7 @@ append-only 的会话日志里，这个插件让模型能自己把被压掉的�
 【热生效：改配置不用重启】
 安装器会把 profile 清单里的 patchReload 确保为 live。此后修改 profile 的
 cordis.patch.yml（例如调 snippetChars）存盘约 5 秒即生效，不用重启；
-判断依据是启动日志里多出一行 [recall-channel] v1.1.0 ready …。
+判断依据是启动日志里多出一行 [recall-channel] v1.1.2 ready …。
 两条边界（DSH 装载机制决定，插件绕不过）：
   - 只管「配置」；换版本或改插件代码（lib\ / dist\）仍需重启一次；
   - 首次安装也必须重启一次。
@@ -145,20 +147,28 @@ cordis.patch.yml（例如调 snippetChars）存盘约 5 秒即生效，不用重
   LICENSE                     MIT
 
 
-【四个已知情况】
-1. 不要用 npx @deepseek-ai/dsh 去装一个全新的 DSH：npm 上 dsh 是 0.1.6-alpha.1，
-   而 dsh-app-boot 已经发到 0.1.6-alpha.2，两者不兼容，启动会直接崩
-   （SyntaxError: ... does not provide an export named 'watchUserPatches'）。
-   这是上游的版本偏斜问题，与本插件无关。
+【五个已知情况】
+1. 不要用 npx @deepseek-ai/dsh 去装一个全新的 DSH：npm 上 dsh 的各通道版本
+   （latest / next）常比 dsh-app-boot 落后一截，两者不兼容，启动会直接崩
+   （例如 SyntaxError: ... does not provide an export named 'watchUserPatches'）。
+   这是上游的版本偏斜问题，与本插件无关。要升级请按本文件顶部说明的、
+   已验证的整树替换流程做。
 
 2. 本插件构建时把依赖内联进 dist/index.js，所以目标机器**不需要**联网，
    也不需要 node_modules。安装脚本只用该 DSH 自带的 node。
 
 3. 插件读取会话历史用的是 DSH 的 session.snapshotEvents() / eventAt() 两个
    同步接口。这两个接口在 DSH 源码里已被标注 @deprecated（"新代码禁止调用"），
-   但 DSH 0.1.6-alpha.1 的核心代码本身仍在大量使用它们，因此当前完全正常。
+   但 DSH 0.1.7-alpha.2 的核心代码本身仍在大量使用它们，签名与 0.1.6 完全一致，
+   因此当前完全正常。
    将来若 DSH 移除这两个接口，插件会报出可读错误而不会损坏数据；届时需要更新插件。
 
 4. 正则检索（regex: true）是尽力而为：插件会拒绝"量词套在含量词/选择分支的组上"
    这类会指数级回溯的写法（可能误杀 (foo|bar)+ 这类安全写法），并受长度、输入、
    时限三重限制。要求零风险就把 allowRegex 设成 false。
+
+5. 本版专治 0.1.7 的一处破坏性变更：Session format V4 不再接受旧的
+   { kind: 'plugin', plugin } 消息来源包装。若在 0.1.7 上误用 v1.1.0，
+   症状是插件能正常加载、两个工具都在，但会话一旦触发压缩、插件去发通知时
+   写入被拒 —— 是一个只在关键时刻才暴露的潜伏故障。装好后想确认版本，
+   看启动日志里的 "[recall-channel] vX.Y.Z ready"。
