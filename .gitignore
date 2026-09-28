@@ -9,3 +9,7 @@ node_modules/
 # Local backup artifacts (never shipped)
 *.bak
 *-bak
+
+# Internal review notes: kept locally, never published
+/审查提示词.md
+/审查回应.md
