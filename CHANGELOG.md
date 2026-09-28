@@ -71,7 +71,7 @@ source: { kind: 'plugin', plugin: 'dsh-recall-channel', form: 'notice', summary 
 
 ## v1.1.0 —— 修复"如实"与"可续取"两条承诺
 
-对四份外部审查报告的处置见 `审查回应.md`。下面是相对 v1.0 的**行为变更**；
+对四份外部审查报告的处置记录保留在本地，未随仓库发布。下面是相对 v1.0 的**行为变更**；
 工具参数（`query` / `regex` / `scope` / `limit` / `compactionId` / `seqs` /
 `fromSeq` / `toSeq` / `budgetTokens`）**一个都没有增删**，所以新旧版本之间来回切换
 不会留下提示词层面的差异。

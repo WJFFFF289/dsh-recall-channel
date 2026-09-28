@@ -66,7 +66,7 @@ if (-not $DshRoot) {
   throw @"
 找不到 DeepSeek Harness 安装目录。
 请先启动一次 DeepSeek Harness，或用参数显式指定，例如：
-  install.cmd -DshRoot "<DSH便携版目录>\DeepSeek-Harness-便携版-0.1.2-alpha.1\DeepSeek Harness"
+  install.cmd -DshRoot "D:\某处\DeepSeek Harness"
 "@
 }
 

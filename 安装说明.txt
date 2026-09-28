@@ -142,7 +142,6 @@ cordis.patch.yml（例如调 snippetChars）存盘约 5 秒即生效，不用重
   test\mechanics.mjs          机制测试：node test\mechanics.mjs（71 项断言，无需联网与依赖）
   README.md                   详细说明、配置表、已知边界、设计要点
   CHANGELOG.md                v1.0 -> v1.1 的行为变更
-  审查回应.md                 对四份外部审查报告的逐条判定与处置
   回滚到v1.0.txt              退回 v1.0 的步骤
   LICENSE                     MIT
 
@@ -172,3 +171,4 @@ cordis.patch.yml（例如调 snippetChars）存盘约 5 秒即生效，不用重
    症状是插件能正常加载、两个工具都在，但会话一旦触发压缩、插件去发通知时
    写入被拒 —— 是一个只在关键时刻才暴露的潜伏故障。装好后想确认版本，
    看启动日志里的 "[recall-channel] vX.Y.Z ready"。
+
