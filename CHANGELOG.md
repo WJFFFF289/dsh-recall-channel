@@ -60,6 +60,32 @@
 `onboardMode` `onboardMaxSessions` `onboardSummaryChars` `workspaceSearch`
 `searchMaxSessions` `memoryEnabled` `memoryFileMaxChars` `memoryConfirmWrite`
 
+### 修复：`workspace_session_summary` 会静默丢掉压缩摘要
+
+一个会实际误导用户的缺陷，本次一并修掉。
+
+**症状**：不带 `limit` 调用 `workspace_session_summary`（走默认值）时，返回的
+可能**全是 prune 记录，一条真正的压缩摘要都没有**——而压缩摘要才是这个工具
+存在的意义。
+
+**根因**：工具按事件顺序把 `compaction/summary` 和 `compaction/prune` 收进同一个
+数组，然后 `slice(0, limit)`（默认 15）。prune 在日志里通常**远多于**摘要，且
+往往成批出现在摘要之前。实测某会话有 27 条 prune 排在 4 条真摘要前面，于是 15
+个名额被 prune 全部占满，4 条摘要一条没留下。
+
+**修法**：
+
+- 摘要与 prune 分入两个数组，返回时按 `[...摘要, ...prune]` 排序后再截断。
+  prune 再多也挤不掉摘要。
+- 新增 `compactionCount` / `pruneCount` / `truncatedCount` 三个输出字段，
+  被截掉多少条如实报告，不再闷声丢弃。
+- 渲染文本现在会明说"展示 N 条摘要、M 条 prune"，并在有截断时提示
+  "还有 K 条低优先级记录未展示，提高 limit 可看"。
+- 顺手修正 `limit` 的参数说明（原文写"默认 30"，实际默认 15）。
+
+**回归防护**：`test/live-session.mjs` 新增 2 条断言——默认窗口下**全部摘要
+必须存活**、且**摘要必须排在 prune 之前**。
+
 ### 硬约束（沿用，一条没破）
 
 不碰压缩引擎；不写其他会话的日志；严格 cwd 隔离；取回内容默认不回喂；
@@ -69,9 +95,18 @@
 
 - 新增 `test/onboard-memory.mjs`：**49 断言**，覆盖记忆写读删滚动、
   弹窗三模式与全部降级路径、跨会话搜索与隔离。
+- 新增 `test/workspace.mjs`：**36 断言**，驱动 `workspace_map` /
+  `workspace_session_summary` / `workspace_recall` 打真实持久化会话。
+- 新增 `test/live-session.mjs`：**42 断言**，用 `SessionStore` 造一个真实
+  live 会话，模拟"用户新开一个聊天"，再从这个会话里调用全部工具
+  （含上面那 2 条摘要排序回归断言）。
+- 新增 `test/e2e-workflow.mjs`：端到端串起
+  `workspace_map → workspace_session_summary → workspace_recall`
+  的模型真实调用顺序，并带耗时统计。
 - `test/mechanics.mjs` 更新 6 条断言以适配"注册 5 工具、挂 2 个 pre-step
   钩子"的新现实（被测行为本身未变）。
-- 全部 **137+ 断言**在 `@deepseek-ai/dsh-session 0.2.0-rc.1` 运行时树上全绿
+- `test/scale.mjs` 压测 20 万事件 / 381 MB 文本，全扫描 229 ms。
+- 全部断言在 `@deepseek-ai/dsh-session 0.2.0-rc.1` 运行时树上全绿
   （含 V4 准入校验）。
 
 ## v1.2.0 —— 跨会话工作区回忆（三个新工具）
