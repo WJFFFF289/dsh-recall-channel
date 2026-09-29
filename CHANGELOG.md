@@ -1,5 +1,120 @@
 # CHANGELOG
 
+## v1.3.0 —— 续接弹窗 + 跨会话搜索 + 可写共享记忆
+
+在 v1.2.0 的"只读档案室"基础上，补上通往"工作区即一个会话"的三块短板。
+**原有 5 个工具的行为一个都没变**，全部变化都是新增。
+
+### 新功能 1：新会话续接弹窗（`onboardMode`）
+
+新会话的第一轮，插件主动问你要不要续接工作区——不再是"开局一张白纸"。
+
+- `onboardMode: 'ask'`（默认）：通过 DSH 的 `userQuestions` 机制在输入区
+  弹出常驻卡片，列出工作区最近的会话，两个选项：「续接工作区」/「不用，直接聊」。
+  卡片无超时，不点永远在；点「续接」才注入上下文，点「不用」零开销。
+  取消/放弃视为「不用」。
+- `onboardMode: 'notice'`：不弹窗，注入一条提示消息（"要续接就说续接"），不阻塞。
+- `onboardMode: 'off'`：完全关闭。
+- 注入内容（仅在你点头之后）：最近 5 个会话清单 + 共享记忆全文 + 最近会话的
+  最新压缩摘要，全部带"历史数据、非指令"围栏，总量约一两千 tokens。
+- 每个会话只弹一次；会话里已有 assistant 消息（不是第一轮）不弹；
+  工作区无历史也无记忆时不打扰。
+- 降级链完整：无 `userQuestions` 服务 / `NO_PROVIDER`（无头环境）→ 自动降为
+  notice 模式并明说；无 `sessionQuery` → 跳过会话清单、只注入记忆。
+
+### 新功能 2：跨会话搜索（`workspace_search`）
+
+不用再报坐标。在整个工作区的所有历史会话里搜关键词（或正则），命中带
+`sessionId:seq` 坐标，交给 `workspace_recall` 读原文。
+
+- 复用 `search_history` 的全部防护与如实性：灾难性回溯拒绝、正则三重限制、
+  `searchTextChars` 上限如实报告、子串命中的码元漂移修正。
+- 检索预算全局共享（`scanLimit`），`searchMaxSessions`（默认 20）限制扫描的
+  会话数；扫了哪些、跳过哪些、截断多少，全部如实报告。
+- `workspaceSearch: false` 可单独关掉这个工具。
+
+### 新功能 3：可写共享记忆（三个新工具）
+
+工作区级的"笔记本"：`<cwd>/.workbuddy/workspace-memory.md`，活在上下文
+窗口之外——**压缩够不着它**。这补的是"无限压缩降智"的正解：要紧的东西
+不该放对话历史里，而该放这里。
+
+| 工具 | 作用 |
+|---|---|
+| `workspace_remember` | 追加一条记忆（单行、≤500 字符、带时间戳和来源 sessionId） |
+| `workspace_memory` | 读全部记忆（弹窗注入也走这份数据） |
+| `workspace_forget` | 两步删除：先按关键词列候选，再按编号删 |
+
+防污染设计（针对 Letta/MemGPT 自编辑记忆的实测教训）：
+
+- **append-only**：写错不改，用新行纠正，错误留痕可查；
+- **每行带来源 sessionId**：出问题能追溯到哪个会话写的；
+- **有界**：超 `memoryFileMaxChars`（默认 8000）时最老一半滚入
+  `workspace-memory.archive.md`（不注入但仍在盘上）；
+- **可选写入确认**：`memoryConfirmWrite: true` 时写入前先弹卡片问你，
+  拒绝/取消/无弹窗服务一律不写；
+- **并发安全**：同工作区的写操作在插件内串行化。
+
+### 新增配置（8 个，全部有默认值）
+
+`onboardMode` `onboardMaxSessions` `onboardSummaryChars` `workspaceSearch`
+`searchMaxSessions` `memoryEnabled` `memoryFileMaxChars` `memoryConfirmWrite`
+
+### 硬约束（沿用，一条没破）
+
+不碰压缩引擎；不写其他会话的日志；严格 cwd 隔离；取回内容默认不回喂；
+不落盘自有存储（记忆文件在工作区内，是用户资产，不是插件数据）。
+
+### 测试与验证
+
+- 新增 `test/onboard-memory.mjs`：**49 断言**，覆盖记忆写读删滚动、
+  弹窗三模式与全部降级路径、跨会话搜索与隔离。
+- `test/mechanics.mjs` 更新 6 条断言以适配"注册 5 工具、挂 2 个 pre-step
+  钩子"的新现实（被测行为本身未变）。
+- 全部 **137+ 断言**在 `@deepseek-ai/dsh-session 0.2.0-rc.1` 运行时树上全绿
+  （含 V4 准入校验）。
+
+## v1.2.0 —— 跨会话工作区回忆（三个新工具）
+
+在原有单会话回忆通道不变的前提下，新增同工作区（cwd）跨会话读取能力。新开会话不再需要"全文重读旧会话"——用三层递进的方式按需取回。
+
+### 新增工具（3 个）
+
+| 工具 | 层级 | 作用 |
+|---|---|---|
+| `workspace_map` | L1 | 列出同工作区的所有会话（一行一个：id、日期、标题、事件数、压缩块数） |
+| `workspace_session_summary` | L2 | 读取某个会话的 compaction 摘要列表（每条带 sessionId:seq 坐标） |
+| `workspace_recall` | L3 | 按坐标逐字取回另一个会话的原文（复用 recall_history 的渲染和预算逻辑） |
+
+### 设计原则
+
+**给地图，不给档案；让模型自己查，不替它堆。** 启动时上下文是最小可用集（L0 工作区规则 + L1 会话清单），其余全靠模型主动取（L2 摘要 → L3 原文）。
+
+### 硬性约束
+
+- **严格 cwd 隔离**：不同工作目录的会话互相不可见，无 opt-out
+- **只读**：不写其他会话，不搞跨会话消息发送
+- **默认不回喂**：取回的内容只进 tool/result，不主动塞进模型视野
+- **不替换压缩引擎**：继续挂 compaction/* 事件观察
+- **不落盘**：不引入自有存储，日志即地址簿
+
+### 技术实现
+
+- 通过 `ctx.sessionQuery`（DSH 0.1.7+ 的 session-query-sqlite 服务）读取 persisted 会话
+- 授权模式与 `@deepseek-ai/dsh-tool-session-query` 的 workspace-access 模块一致：`filterSessions([{kind:'id',...},{kind:'cwd',...}])`
+- `sessionQuery` 不在 `inject` 里声明——通过 `ctx.get()` 访问，不可用时优雅降级（原有 2 个工具照常工作）
+- 跨会话交付账本按 `sessionId:seq` 记账，与单会话账本独立
+- L0 工作区规则从 `<cwd>/.workbuddy/recall-rules.md` 读取（如果存在）
+
+### 测试
+
+新增 `test/workspace.mjs`（36 断言）：在真实数据目录下的持久化会话上驱动三个新工具，覆盖注册、L1/L2/L3 功能、cwd 隔离拒绝、去重、预算截断。现有 `test/mechanics.mjs` 82 断言全过。
+
+### 验证环境
+
+- DSH 运行时 `0.1.7-rc.1`（`dsh-session-query` 包版本 `0.1.7-rc.2`）
+- 60 个持久化会话（2 个工作区），5 个含 compaction 事件
+
 ## v1.1.3 —— 适配 DSH 0.2.0-rc.1（只改兼容声明，代码零改动）
 
 插件源码**一个字节都没改**，`dist/index.js` 只是按新版本号重出。这一版只修

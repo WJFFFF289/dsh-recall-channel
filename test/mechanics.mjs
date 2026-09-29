@@ -409,7 +409,7 @@ console.log('config and boot:')
     bootOk = false
     console.log(`       boot error: ${error && error.message}`)
   }
-  check('apply() registers both tools and boots', bootOk && registered.length === 2, `registered=${registered.length}`)
+  check('apply() registers the tools and boots', bootOk && registered.length === 5, `registered=${registered.length} (2 base + 3 memory in v1.3.0; workspace tools defer to sessionQuery)`)
 }
 
 console.log('notice source (Session format V4):')
@@ -446,8 +446,20 @@ console.log('notice source (Session format V4):')
 
   fire('session/event', emitSession, emitEvents[3])
   const preStep = bootHandlers.get('agent/pre-step')
-  check('apply() subscribed to agent/pre-step', preStep?.length === 1, `handlers=${preStep?.length}`)
-  const emitted = await preStep[0]({ agent: { session: emitSession } }, async () => ({ messages: [] }))
+  // v1.3.0 mounts TWO pre-step hooks: onboard (resume offer) and the notice
+  // poster. The emit session has no header.cwd, so onboard stays silent and
+  // the notice path below behaves exactly as before.
+  check('apply() subscribed to agent/pre-step', preStep?.length === 2, `handlers=${preStep?.length}`)
+  // Chain the hooks the way cordis does: each hook's next() runs the rest of
+  // the chain; the innermost next yields the base decision.
+  let hookIndex = 0
+  const runChain = async () => {
+    if (hookIndex >= preStep.length) return { messages: [] }
+    const hook = preStep[hookIndex]
+    hookIndex += 1
+    return hook({ agent: { session: emitSession } }, runChain)
+  }
+  const emitted = await runChain()
   const notice = emitted?.messages?.[emitted.messages.length - 1]
   check('the pre-step hook appends exactly one notice', emitted?.messages?.length === 1, `messages=${emitted?.messages?.length}`)
   check('the emitted notice carries the named-producer kind', notice?.source?.kind === PRODUCER_KIND, notice?.source?.kind)

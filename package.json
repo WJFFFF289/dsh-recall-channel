@@ -1,9 +1,17 @@
 {
   "name": "dsh-recall-channel",
-  "version": "1.1.3",
-  "description": "Recall channel for DeepSeek Harness: search the durable session log (including content shadowed by compaction) and restore it on demand.",
+  "version": "1.3.0",
+  "description": "Recall channel for DeepSeek Harness: search and restore compacted history within a session, recall content across sessions in the same workspace, search all workspace sessions at once, keep a writable shared memory file, and offer to resume the workspace when a new session starts.",
   "license": "MIT",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WJFFFF289/dsh-recall-channel.git"
+  },
+  "homepage": "https://github.com/WJFFFF289/dsh-recall-channel#readme",
+  "bugs": {
+    "url": "https://github.com/WJFFFF289/dsh-recall-channel/issues"
+  },
   "main": "dist/index.js",
   "exports": {
     ".": "./dist/index.js",
@@ -13,6 +21,8 @@
     "dist",
     "lib",
     "cordis.patch.yml",
+    "install.cmd",
+    "install.ps1",
     "README.md",
     "CHANGELOG.md",
     "THIRD-PARTY-NOTICES.md",
@@ -22,7 +32,7 @@
   ],
   "scripts": {
     "build": "node build.mjs",
-    "test": "node test/mechanics.mjs"
+    "test": "node test/mechanics.mjs && node test/onboard-memory.mjs && node test/scale.mjs"
   },
   "keywords": [
     "deepseek",

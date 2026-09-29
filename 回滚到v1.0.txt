@@ -16,7 +16,7 @@
    安装器是幂等的：它会先卸载当前已装的 dsh-recall-channel（也就是 v1.1），
    再安装 v1.0 这一份，最后用 --dump-config 校验并核对 profile 的链接指向。
    自动探测失败时显式指定：
-     install.cmd -DshRoot "D:\某处\DeepSeek-Harness-便携版-0.1.2-alpha.1\DeepSeek Harness"
+     install.cmd -DshRoot "D:\Apps\DeepSeek Harness"
 
 3) 如果你的 profile 的 cordis.patch.yml 里写过 **v1.1 新增的配置键**，请先删掉它们。
    v1.1 新增：blockChars, argChars, searchTextChars, maxRangeSeqs, allowRegex,

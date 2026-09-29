@@ -10,11 +10,11 @@
 #
 # 用法（一般直接双击 install.cmd 即可）：
 #   install.cmd
-#   install.cmd -DshRoot "D:\某处\DeepSeek Harness"
-#   install.cmd -DshRoot "..." -DshHome "C:\Users\xx\AppData\Roaming\deepseek-harness-desktop\dsh-home"
+#   install.cmd -DshRoot "D:\Apps\DeepSeek Harness"
+#   install.cmd -DshRoot "..." -DshHome "C:\Users\<你>\AppData\Roaming\deepseek-harness-desktop\dsh-home"
 #
 # 参数说明：
-#   -DshRoot  便携版的 "DeepSeek Harness" 文件夹（里面应有 resources\ 子目录）
+#   -DshRoot  "DeepSeek Harness" 程序文件夹（里面应有 resources\ 子目录）
 #   -DshHome  DSH 数据目录（默认 %APPDATA%\deepseek-harness-desktop\dsh-home）
 #   -Profile  profile 名（默认 web）
 #   -PnpmPath pnpm 的位置（目录或 pnpm.cmd 全路径）。不填则自动找 PATH 与常见位置；
@@ -140,11 +140,11 @@ if (-not $pnpm) {
 
 三种解决办法（任选其一）：
   1) 显式指定（推荐，不改系统环境）：
-       install.cmd -PnpmPath "C:\某处\pnpm.cmd"
-       install.cmd -PnpmPath "C:\某处\pnpm所在目录"
+       install.cmd -PnpmPath "D:\Tools\pnpm.cmd"
+       install.cmd -PnpmPath "D:\Tools\pnpm"
   2) 把 pnpm 装到 PATH 上，然后重开一个终端再跑本脚本：
        npm install -g pnpm
-  3) 如果本机有便携版 pnpm，把它所在目录加到用户 PATH：
+  3) 如果本机已有独立安装的 pnpm，把它所在目录加到用户 PATH：
        该目录里应当能看到 pnpm.cmd
 "@
 }

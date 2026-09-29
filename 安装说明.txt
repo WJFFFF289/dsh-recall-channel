@@ -28,7 +28,7 @@ DSH 从 0.2.0 起会在启动时核对这项声明，不满足的插件会被整
 官方桌面端的数据目录是 %USERPROFILE%\.dsh，且它的 profiles/desktop 由应用独占，
 命令行（含应用自带的那份 CLI）一律报
   error: profile "desktop" is managed exclusively by the Electron application
-所以下面的 install.cmd 只适用于便携版/CLI 场景。桌面端请在应用内「插件」页
+所以下面的 install.cmd 只适用于 CLI 场景。桌面端请在应用内「插件」页
 添加本地目录（指向本目录），不要跑 install.cmd。
 
 
@@ -44,7 +44,7 @@ DSH 从 0.2.0 起会在启动时核对这项声明，不满足的插件会被整
      - 先卸载已装的 dsh-recall-channel（不论哪个版本），再安装本目录这一份
      - 用 --dump-config 校验插件行是否已进入组合配置，并核对 profile 的链接指向本目录
    如果自动探测失败，改用命令行显式指定：
-     install.cmd -DshRoot "D:\某处\DeepSeek-Harness-便携版-0.1.2-alpha.1\DeepSeek Harness"
+     install.cmd -DshRoot "D:\Apps\DeepSeek Harness"
 
 4. 重启一次 DeepSeek Harness（插件在启动时装载）。
    重启后看启动日志，应出现这一行：
