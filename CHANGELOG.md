@@ -1,5 +1,65 @@
 # CHANGELOG
 
+## v1.1.3 —— 适配 DSH 0.2.0-rc.1（只改兼容声明，代码零改动）
+
+插件源码**一个字节都没改**，`dist/index.js` 只是按新版本号重出。这一版只修
+`package.json` 里的一条兼容声明。
+
+### 背景：DSH 0.2.0 起会**拒绝加载**不满足 peer 范围的插件
+
+DSH 从 `dsh-app-boot` 的 `evaluatePluginCompatibility()` 起，在 profile 组装阶段逐个
+检查插件 `peerDependencies` 里所有 `@deepseek-ai/dsh` / `@deepseek-ai/dsh-*` 条目，
+用 `semver.satisfies(runtimeVersion, range, { includePrerelease: true })` 对照**当前运行时
+版本**。不满足时抛错 → 该 bundle 根本不会被装载，插件页显示「异常」。这不是警告，是拦停。
+
+旧声明是：
+
+```json
+"@deepseek-ai/dsh-session": "^0.1.7-alpha.2"
+```
+
+node-semver 把 `^0.1.7-alpha.2` 展开为 `>=0.1.7-alpha.2 <0.2.0-0`。注意上界是
+**`0.2.0-0`** 而不是 `0.2.0`——插入的 `-0` 让**任何** `0.2.0-*` 预发布版本都不在范围内，
+`0.2.0-rc.1` 自然被拒。（同目录的其他插件用 `>=0.1.7-alpha.1 <0.2.0` 这种手写上界就不踩
+这个坑，因为 `0.2.0-rc.1 < 0.2.0` 成立。）
+
+### 修复
+
+```json
+"@deepseek-ai/dsh-session": "^0.1.7-alpha.2 || ^0.2.0-rc.1"
+```
+
+第二个分支展开为 `>=0.2.0-rc.1 <0.3.0-0`，覆盖整个 0.2.x 线（rc.2、0.2.0 正式版、
+0.2.x 补丁都在内），所以 0.2 线内的小版本升级不用再改这一行。
+
+### 依据：为什么 0.2.0-rc.1 是真的兼容，而不是"声明放宽混过去"
+
+对插件实际消费的每一个运行时包，逐字节比对 `0.1.7-rc.2`（上一版实测通过的版本）与
+`0.2.0-rc.1` 的 `lib/**`：
+
+| 包 | 用途 | 结果 |
+|---|---|---|
+| `@deepseek-ai/dsh-llm` | `createUserMessage`（注入通知） | **逐字节相同** |
+| `@deepseek-ai/dsh-tools` | `defineTool`（两个工具） | **逐字节相同** |
+| `@deepseek-ai/dsh-output-retention` | `TextRetainer`（头/尾保留） | **逐字节相同** |
+| `@deepseek-ai/dsh-session-format-v3-to-v4` | `assertV4RowAdmission`（测试里的准入校验） | **逐字节相同** |
+| `@deepseek-ai/dsh-session` | `snapshotEvents()` / `eventAt()` / `session.seq` | 19 个文件相同，5 个改动 |
+
+`dsh-session` 的 5 个改动文件全部落在**中断恢复**（`ToolCallRecovery` 从
+`interruptedTurnClosers` 里抽出成独立类、崩溃尾/分叉种子共用一套 pending 结算）上，
+类型面只有新增（`ToolCallRecovery` 与它的 4 个成员），**没有任何删除**。插件用到的
+`snapshotEvents()` / `eventAt()` 在 0.2.0-rc.1 里签名与实现均未变。
+
+`@deepseek-ai/cordis` 不在 DSH 的检查名单里（只有 `dsh*` 前缀被查），但一并核过：
+运行时是 4.0.4，声明 `^4.0.2` 依旧满足。
+
+### 验证
+
+- 自带测试在 `0.1.7-rc.2` 树上全绿（含 V4 准入那条）。
+- 另在从官方桌面端 `app.asar` 还原出的 `0.2.0-rc.1` 树上重跑，同样全绿。
+- 兼容判定按 `dsh-app-boot` 里 `evaluatePluginCompatibility()` 的同一套语义复核：
+  修复前能复现出应用里的同一条异常，修复后通过。
+
 ## v1.1.2 —— 体检修复批次（如实性 4 项）
 
 插件的工具、参数、配置项**一个都没动**。这一版修的是一轮全面源码体检（对
